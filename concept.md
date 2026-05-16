@@ -28,6 +28,8 @@ Examples: `agent-1/T-042-add-auth`, `agent-2/T-043-fix-login-bug`
 
 Each agent opens a PR with structured body: task ID, agent ID, changed files, test status, and notes.
 
+See [`examples/pr-template.md`](examples/pr-template.md) for the full template.
+
 #### Stale Base Detection
 
 Before starting: fetch latest `main`, record base commit hash. During CI: check if `main` has moved, auto-rebase if so.
@@ -38,43 +40,13 @@ Before working, an agent announces its intended scope so others can object.
 
 **Coordination layer:** `tasks/` directory in the repo.
 
-```
-tasks/
-├── active/
-│   └── T-042-agent-1.md    # Current active task claim
-├── resolved/
-│   └── T-042-agent-1.md    # Completed, merged
-└── rejected/
-    └── T-043-agent-2.md    # Conflict, deferred
-```
+See [`examples/task-directory-structure.md`](examples/task-directory-structure.md) for the full layout.
 
 **Claim lifecycle:** `pending → confirmed → active → resolved/rejected`
 
 **Claim file format:**
 
-```markdown
-## Task
-T-042: Add authentication module
-
-## Agent
-agent-1
-
-## Scope
-- src/auth/
-- tests/test_auth/
-
-## Claimed at
-2026-05-16T10:30:00Z
-
-## Claim window
-1h  ← flexible, user-overridable
-
-## Expires at
-2026-05-16T11:30:00Z
-
-## Status
-pending (expires in 45m)
-```
+See [`examples/task-claim.md`](examples/task-claim.md) for a complete example.
 
 **Flexible claim window:**
 - Default: configurable at system level (e.g., 1 hour)
@@ -139,29 +111,7 @@ idle
 
 Each agent has a persistent identity file:
 
-```
-agents/
-├── agent-1.json    # Active agent
-├── agent-2.json    # Active agent
-└── archived/
-    └── agent-3.json    # Terminated
-```
-
-**Agent identity file:**
-
-```json
-{
-  "id": "agent-1",
-  "name": "Auth Specialist",
-  "created": "2026-05-16T09:00:00Z",
-  "status": "idle",
-  "current_task": null,
-  "current_branch": null,
-  "total_tasks_completed": 12,
-  "expertise": ["auth", "security", "sessions"],
-  "last_active": "2026-05-16T10:30:00Z"
-}
-```
+See [`examples/agent-identity.json`](examples/agent-identity.json) for a complete example.
 
 ### Task Assignment
 
@@ -171,17 +121,7 @@ A coordinator (or user) assigns tasks to agents:
 2. Coordinator matches task to agent by **expertise** or **availability**
 3. Agent receives the task and enters the **claiming** stage
 
-```
-tasks/
-├── backlog/
-│   └── T-044.md
-├── assigned/
-│   └── T-044-agent-1.md
-├── in-progress/
-│   └── T-045-agent-2.md
-└── done/
-    └── T-042.md
-```
+See [`examples/task-directory-structure.md`](examples/task-directory-structure.md) for the full layout.
 
 ### Shutdown / Termination
 
@@ -201,20 +141,9 @@ tasks/
 
 ### Environment Declaration (Per-Agent)
 
-Each agent declares its environment in its identity file:
+Each agent declares its environment in its identity file.
 
-```json
-{
-  "id": "agent-1",
-  "platform": "windows",
-  "shell": "powershell",
-  "python": "3.12",
-  "node": "20",
-  "installed_tools": ["git", "python", "node"],
-  "missing_tools": ["docker", "terraform"],
-  "last_sync": "2026-05-16T10:30:00Z"
-}
-```
+See [`examples/agent-identity.json`](examples/agent-identity.json) for a complete example.
 
 ### Task Compatibility Check
 
@@ -229,15 +158,7 @@ Before assigning a task, check requirements against agent capabilities:
 
 Tasks declare requirements:
 
-```markdown
-## Task
-T-044: Deploy to AWS
-
-## Requires
-- platform: linux
-- tool: aws-cli
-- python: >= 3.11
-```
+See [`examples/task-definition.md`](examples/task-definition.md) for a complete example.
 
 ### Cross-Platform Handling
 
@@ -285,6 +206,14 @@ When a task requires something an agent doesn't have:
 | Frequent integration | Catch conflicts early, not at the end |
 | Deterministic outputs | Reduces "two agents do different things to the same code" |
 | Clear ownership | Assign files/modules to specific agents when possible |
+
+## Glossary
+
+- [`examples/agent-identity.json`](examples/agent-identity.json) — Complete agent identity file
+- [`examples/task-claim.md`](examples/task-claim.md) — Task claim file for round-call
+- [`examples/task-definition.md`](examples/task-definition.md) — Task definition with requirements
+- [`examples/pr-template.md`](examples/pr-template.md) — PR template for agent submissions
+- [`examples/task-directory-structure.md`](examples/task-directory-structure.md) — Task directory layout
 
 ## Real-World Examples
 

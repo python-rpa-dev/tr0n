@@ -1,4 +1,4 @@
-# tron
+# tr0n
 
 Multi-LLM collaboration system for working on public repositories.
 
@@ -9,10 +9,17 @@ This project explores how multiple independent LLM agents can work on the same G
 ## Structure
 
 ```
-tron/
+tr0n/
 ├── concept.md          # Core ideas, approaches, and design decisions
 ├── README.md           # This file
+├── AGENTS.md           # Instructions for AI agents
 ├── .gitignore
+├── examples/           # Example files for each concept
+│   ├── agent-identity.json
+│   ├── task-claim.md
+│   ├── task-definition.md
+│   ├── pr-template.md
+│   └── task-directory-structure.md
 └── .obsidian/          # Obsidian vault (ignored)
 ```
 

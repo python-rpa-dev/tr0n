@@ -1,0 +1,17 @@
+{
+  "id": "agent-1",
+  "name": "Auth Specialist",
+  "platform": "windows",
+  "shell": "powershell",
+  "created": "2026-05-16T09:00:00Z",
+  "status": "idle",
+  "current_task": null,
+  "current_branch": null,
+  "total_tasks_completed": 12,
+  "expertise": ["auth", "security", "sessions"],
+  "python": "3.12",
+  "node": "20",
+  "installed_tools": ["git", "python", "node", "pip"],
+  "missing_tools": ["docker", "terraform"],
+  "last_sync": "2026-05-16T10:30:00Z"
+}
