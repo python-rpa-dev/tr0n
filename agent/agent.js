@@ -1,7 +1,29 @@
+// agent.js — tr0n agent entry point
+//
+// This module orchestrates the agent lifecycle:
+//   1. Load identity from config/local/agent.json (local, private)
+//   2. Detect available tools and platform (environment declaration)
+//   3. Register agent state in agents/ (repo, shared)
+//   4. Fetch latest main from remote
+//   5. Process task: claim → conflict check → confirm → branch → work
+//
+// Two modes:
+//   - Standalone: tr0n-agent --task T-042 (CLI)
+//   - Protocol:   tr0n-agent --protocol (stdin/stdout for LLM clients)
+//
+// Config file convention (template + local pattern):
+//   config/templates/agent.json.example  → tracked in git (template)
+//   config/local/agent.json              → gitignored (user-specific)
+//   config/local/settings.json           → gitignored (user-specific)
+//   agents/agent-{id}.json               → tracked in git (shared state)
+//   tasks/active/T-NNN-agent-{id}.json   → tracked in git (shared claims)
+
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// --- Paths ---
+// REPO_ROOT: the tr0n repository root directory
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CONFIG_LOCAL = path.join(REPO_ROOT, 'config', 'local', 'agent.json');
 const CONFIG_TEMPLATE = path.join(REPO_ROOT, 'config', 'templates', 'agent.json.example');
@@ -9,8 +31,9 @@ const AGENTS_DIR = path.join(REPO_ROOT, 'agents');
 const TASKS_DIR = path.join(REPO_ROOT, 'tasks');
 const SETTINGS_FILE = path.join(REPO_ROOT, 'config', 'local', 'settings.json');
 
-// --- Config ---
-
+// --- Config Layer ---
+// Loads agent identity config. Falls back from local copy to template.
+// If neither exists, creates local copy from template and throws if template is missing.
 function loadConfig() {
   if (fs.existsSync(CONFIG_LOCAL)) {
     return JSON.parse(fs.readFileSync(CONFIG_LOCAL, 'utf8'));
@@ -26,6 +49,7 @@ function loadConfig() {
   throw new Error('No agent config found. Create config/local/agent.json or copy from config/templates/agent.json.example');
 }
 
+// Persists agent config to the local (gitignored) directory.
 function saveConfig(cfg) {
   if (!fs.existsSync(path.dirname(CONFIG_LOCAL))) {
     fs.mkdirSync(path.dirname(CONFIG_LOCAL), { recursive: true });
@@ -33,6 +57,7 @@ function saveConfig(cfg) {
   fs.writeFileSync(CONFIG_LOCAL, JSON.stringify(cfg, null, 2));
 }
 
+// Loads system settings with sensible defaults for claim windows, conflict strategy, etc.
 function loadSettings() {
   const defaults = {
     claim_window_default: '1h',
@@ -48,8 +73,9 @@ function loadSettings() {
   return { ...defaults, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) };
 }
 
-// --- Git ---
-
+// --- Git Layer ---
+// Thin wrappers around `git` CLI for core operations.
+// git() throws on failure; gitSafe() returns null on failure (silent mode).
 function git(args) {
   return execSync(`git ${args}`, { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
 }
@@ -62,7 +88,11 @@ function gitSafe(args) {
   }
 }
 
-// --- Identity ---
+// --- Identity / Registry Layer ---
+// Each agent has two identity locations:
+//   1. config/local/agent.json — private config (gitignored)
+//   2. agents/agent-{id}.json  — shared state (tracked in git)
+// The registry tracks agent status, current task, and branch across all agents.
 
 function ensureAgentRegistry(cfg) {
   if (!fs.existsSync(AGENTS_DIR)) {
@@ -86,6 +116,7 @@ function ensureAgentRegistry(cfg) {
   }
 }
 
+// Updates the agent's shared registry entry with current state.
 function updateRegistry(cfg) {
   ensureAgentRegistry(cfg);
   const agentFile = path.join(AGENTS_DIR, `${cfg.id}.json`);
@@ -101,6 +132,7 @@ function updateRegistry(cfg) {
   fs.writeFileSync(agentFile, JSON.stringify(entry, null, 2));
 }
 
+// Loads all active agent registry entries (excludes archived/terminated agents).
 function loadRegistry() {
   if (!fs.existsSync(AGENTS_DIR)) return {};
   const entries = {};
@@ -113,6 +145,9 @@ function loadRegistry() {
 }
 
 // --- Environment Detection ---
+// When an agent wakes up, it detects its platform and available tools.
+// This info is pushed to the agent's registry entry for cross-agent compatibility checks.
+// Detection is cross-platform: uses different commands for Windows (PowerShell) vs POSIX.
 
 function detectOS() {
   if (process.platform === 'win32') {
@@ -162,9 +197,12 @@ function detectEnvironment() {
   };
 }
 
-// --- Branch ---
+// --- Branch Management ---
+// Creates feature branches following the naming convention: agent-{id}/T-NNN-{desc}
+// Branches are created from the latest origin/main to ensure a clean base.
 
 function createBranch(taskId, description, cfg) {
+  // Build branch name: agent-7xK9m/s/T-042-add-auth
   const branchName = `${cfg.id}/${taskId}-${description.replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
 
   git('fetch origin');
@@ -183,6 +221,7 @@ function getBranchList() {
   return out.split('\n').map(l => l.trim().replace(/^[\* ]+/, '')).filter(Boolean);
 }
 
+// Finds all agents that are currently active (working, claiming, or have a matching branch).
 function getActiveAgents() {
   const registry = loadRegistry();
   const branches = getBranchList();
@@ -198,7 +237,9 @@ function getActiveAgents() {
   return active;
 }
 
-// --- PR ---
+// --- PR Creation ---
+// Creates a pull request using the `gh` CLI with a structured body from the PR template.
+// Falls back to printing manual instructions if `gh` is not available.
 
 function createPR(branchName, taskId, cfg) {
   const settings = loadSettings();
@@ -214,6 +255,7 @@ function createPR(branchName, taskId, cfg) {
     body = `## Task\n${taskId}\n\n## Agent\n${cfg.id}\n\n## Changes\n- See branch for changes\n\n## Tests\n- [ ] Unit tests included\n- [ ] Integration tests included\n- [ ] All tests passing\n\n## Notes\nAutomated PR from tr0n agent.`;
   }
 
+  // Check if gh CLI is available; print manual instructions as fallback
   if (!gitSafe('which gh') && !gitSafe('command -v gh')) {
     console.log(`\n[tr0n] gh CLI not found. Please create PR manually:\n`);
     console.log(`  git push origin ${branchName}`);
@@ -233,7 +275,10 @@ function createPR(branchName, taskId, cfg) {
   }
 }
 
-// --- Claim ---
+// --- Claim Management ---
+// A claim is an agent's assertion that it will work on a specific task within a scope.
+// Claims follow the lifecycle: pending → confirmed → active → resolved/rejected.
+// Each claim is stored as both JSON (machine-readable) and Markdown (human-readable).
 
 function createClaim(taskId, scope, claimWindow, cfg) {
   const now = new Date();
@@ -255,10 +300,11 @@ function createClaim(taskId, scope, claimWindow, cfg) {
     fs.mkdirSync(activeDir, { recursive: true });
   }
 
+  // Write human-readable Markdown claim file
   const claimFile = path.join(activeDir, `${taskId}-${cfg.id}.md`);
   fs.writeFileSync(claimFile, formatClaim(claim));
 
-  // Also create JSON version for machine reading
+  // Also create JSON version for machine reading (by other agents)
   const jsonFile = path.join(activeDir, `${taskId}-${cfg.id}.json`);
   fs.writeFileSync(jsonFile, JSON.stringify(claim, null, 2));
 
@@ -279,6 +325,7 @@ function formatClaim(claim) {
   return md;
 }
 
+// Checks if any other active agent's scope overlaps with this claim's scope.
 function checkConflicts(claim) {
   const activeAgents = getActiveAgents();
   const conflicts = [];
@@ -304,6 +351,7 @@ function checkConflicts(claim) {
   return conflicts;
 }
 
+// Transitions a claim from 'pending' to 'confirmed' (auto-confirm after claim window).
 function confirmClaim(claim) {
   claim.status = 'confirmed';
   const jsonFile = path.join(TASKS_DIR, 'active', `${claim.task}-${claim.agent}.json`);
@@ -315,6 +363,7 @@ function confirmClaim(claim) {
   return claim;
 }
 
+// Rejects a claim due to conflict or expiration.
 function rejectClaim(claim, reason) {
   claim.status = 'rejected';
   claim.expired_reason = reason;
@@ -323,6 +372,7 @@ function rejectClaim(claim, reason) {
   return claim;
 }
 
+// Parses duration strings like "1h", "30m", "1s" into milliseconds.
 function parseDuration(str) {
   const match = str.match(/^(\d+)([smh])$/);
   if (!match) throw new Error(`Invalid duration: ${str}`);
@@ -334,7 +384,13 @@ function parseDuration(str) {
   throw new Error(`Unknown unit: ${unit}`);
 }
 
-// --- Main ---
+// --- Main Entry Point ---
+// Orchestrates the agent startup flow:
+//   1. Parse CLI args (--task, --claim-window, --protocol)
+//   2. Load identity, detect environment, register in repo
+//   3. If --protocol: enter stdin/stdout mode for LLM clients
+//   4. If --task: process the task (claim → conflict check → confirm → branch)
+//   5. If no args: look for available tasks in tasks/assigned/
 
 function main() {
   const args = process.argv.slice(2);
@@ -342,6 +398,7 @@ function main() {
   const windowIdx = args.indexOf('--claim-window');
   const protocolIdx = args.indexOf('--protocol');
 
+  // Protocol mode: stdin/stdout for LLM clients (opencode, aichat, etc.)
   if (protocolIdx !== -1) {
     require('./protocol').start();
     return;
@@ -352,11 +409,11 @@ function main() {
 
   console.log('[tr0n] Starting agent...');
 
-  // Load config
+  // Load agent identity from config/local/agent.json (or template)
   const cfg = loadConfig();
   console.log(`[tr0n] Agent ID: ${cfg.id}`);
 
-  // Detect environment
+  // Detect environment and update agent config
   const env = detectEnvironment();
   cfg.environment = env;
   console.log(`[tr0n] Environment: ${env.os} / ${env.shell} / tools: ${env.installed.join(', ')}`);
@@ -364,17 +421,17 @@ function main() {
     console.log(`[tr0n] Missing tools: ${env.missing.join(', ')}`);
   }
 
-  // Ensure registry
+  // Register/update agent in shared repo state
   updateRegistry(cfg);
   const registry = loadRegistry();
   console.log(`[tr0n] Active agents: ${Object.keys(registry).join(', ') || 'none'}`);
 
-  // Fetch latest
+  // Fetch latest main to ensure clean working state
   console.log('[tr0n] Fetching latest main...');
   git('fetch origin');
 
+  // No-args mode: look for available task in tasks/assigned/
   if (!taskId) {
-    // No-args mode: look for available task
     console.log('[tr0n] No task specified. Looking for available tasks...');
     const assignedDir = path.join(TASKS_DIR, 'assigned');
     if (!fs.existsSync(assignedDir)) {
@@ -410,11 +467,15 @@ function main() {
   processTask(taskId, claimWindow || loadSettings().claim_window_default, cfg);
 }
 
+// Core task processing flow (the agent's main work loop):
+//   Step 1: Create claim (pending) → tasks/active/T-NNN-agent-{id}.json
+//   Step 2: Check conflicts with other active agents
+//   Step 3: If no conflicts → confirm claim → create branch
+//   Step 4: Update agent state to 'working'
 function processTask(taskId, claimWindow, cfg) {
-  // Step 1: Create claim
+  // Step 1: Read task definition from backlog for scope, then create claim
   console.log(`[tr0n] Creating claim for ${taskId} (window: ${claimWindow})...`);
 
-  // Read task definition for scope
   let scope = [];
   const backlogDir = path.join(TASKS_DIR, 'backlog');
   if (fs.existsSync(backlogDir)) {
@@ -428,6 +489,7 @@ function processTask(taskId, claimWindow, cfg) {
     }
   }
 
+  // Fallback to default scope if task definition has no scope
   if (scope.length === 0) {
     scope = ['src/'];
     console.log(`[tr0n] No scope defined, using default: ${scope.join(', ')}`);
@@ -436,7 +498,7 @@ function processTask(taskId, claimWindow, cfg) {
   const claim = createClaim(taskId, scope, claimWindow, cfg);
   console.log(`[tr0n] Claim created: ${JSON.stringify(claim)}`);
 
-  // Step 2: Check for conflicts
+  // Step 2: Check for conflicts with other active agents
   console.log('[tr0n] Checking for conflicts...');
   const conflicts = checkConflicts(claim);
 
@@ -446,7 +508,7 @@ function processTask(taskId, claimWindow, cfg) {
       console.log(`  ${c.agent} (${c.task}): overlaps on ${c.overlap.join(', ')}`);
     }
 
-    // Apply conflict resolution
+    // Apply conflict resolution: defer-later strategy (earlier claim wins)
     const settings = loadSettings();
     if (settings.conflict_strategy === 'defer-later') {
       const earlierClaim = conflicts.find(c => {
@@ -466,7 +528,7 @@ function processTask(taskId, claimWindow, cfg) {
     }
   }
 
-  // Step 3: Confirm claim
+  // Step 3: Auto-confirm claim if no conflicts and auto_confirm is enabled
   const settings = loadSettings();
   if (settings.auto_confirm) {
     console.log('[tr0n] Auto-confirming claim (no objections)...');
@@ -479,13 +541,13 @@ function processTask(taskId, claimWindow, cfg) {
     return;
   }
 
-  // Step 4: Create branch
+  // Step 4: Create feature branch from latest main
   const desc = taskId; // Use task ID as short desc
   console.log(`[tr0n] Creating branch for ${taskId}...`);
   const branchName = createBranch(taskId, desc, cfg);
   console.log(`[tr0n] Branch created: ${branchName}`);
 
-  // Step 5: Update state
+  // Step 5: Update agent state to 'working'
   cfg.status = 'working';
   cfg.current_task = taskId;
   cfg.current_branch = branchName;
@@ -499,6 +561,8 @@ function processTask(taskId, claimWindow, cfg) {
   console.log(`  Create PR: gh pr create --base main --head ${branchName}\n`);
 }
 
+// --- Module Exports ---
+// Exports all functions for use by tests and the protocol module.
 module.exports = {
   loadConfig,
   saveConfig,
@@ -518,6 +582,8 @@ module.exports = {
   processTask
 };
 
+// --- Entry Point ---
+// When run directly (not imported), execute the main flow.
 if (require.main === module) {
   try {
     main();
