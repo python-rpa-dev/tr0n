@@ -416,38 +416,12 @@ idle
 
 ### Agent Registration
 
-Each agent has a persistent identity file:
+Each agent has a persistent identity stored in **two locations**:
 
-<!-- TODO: Define agent ID naming convention and uniqueness guarantee -->
-
-#### Agent ID Naming Convention
-
-**Format:** `agent-{base62-encoded-uuid}`
-
-Examples: `agent-7xK9mPqR2vN4wY8jL1bZ`, `agent-m3pL9vN2xR5wY8jK1bZ`
-
-**How uniqueness is guaranteed:**
-
-1. On first run, agent generates a UUID v4 (122 random bits)
-2. Encodes the UUID in base62 (22 characters)
-3. Creates file `agents/agent-{id}.json`
-4. Collision probability: negligible (same as raw UUID v4)
-
-**Why base62:**
-
-| Format                | Length    | Safe?                    |
-|-----------------------|-----------|--------------------------|
-| Full UUID (hyphenated) | 36 chars  | Yes, but long filenames  |
-| Full UUID (hex)        | 32 chars  | Yes, still long          |
-| Truncated hex (8 chars)| 8 chars   | No — birthday paradox    |
-| Base62-encoded UUID    | 22 chars  | Yes — best balance       |
-
-**Two-location identity:**
-
-| Location                         | Purpose                                           | Tracked? |
-|----------------------------------|---------------------------------------------------|----------|
-| `config/local/agent.json` (local) | Agent's own identity and config — private        | ❌ No (gitignored) |
-| `agents/agent-{uuid}.json` (repo) | Agent state (status, task, branch) — shared    | ✅ Yes   |
+| Location | Purpose | Tracked? |
+|----------|---------|----------|
+| `config/local/agent.json` (local) | Agent's own identity and config — private | ❌ No (gitignored) |
+| `agents/agent-{uuid}.json` (repo) | Agent state (status, task, branch) — shared | ✅ Yes |
 
 **Agent identity resolution:**
 
@@ -471,20 +445,117 @@ Agent starts
   └─→ Write ID to config/local/agent.json
 ```
 
+#### Agent ID Naming Convention
+
+**Format:** `agent-{base62-encoded-uuid}`
+
+Examples: `agent-7xK9mPqR2vN4wY8jL1bZ`, `agent-m3pL9vN2xR5wY8jK1bZ`
+
+**How uniqueness is guaranteed:**
+
+1. On first run, agent generates a UUID v4 (122 random bits)
+2. Encodes the UUID in base62 (22 characters)
+3. Creates file `agents/agent-{id}.json`
+4. Collision probability: negligible (same as raw UUID v4)
+
+**Why base62:**
+
+| Format                | Length    | Safe?                    |
+|-----------------------|-----------|--------------------------|
+| Full UUID (hyphenated) | 36 chars  | Yes, but long filenames  |
+| Full UUID (hex)        | 32 chars  | Yes, still long          |
+| Truncated hex (8 chars)| 8 chars   | No — birthday paradox    |
+| Base62-encoded UUID    | 22 chars  | Yes — best balance       |
+
 **Agent ID file in repo:**
 
 ```
 agents/
-├── agent-a3f8b2c1.json    # Active agent
-├── agent-d7e9f012.json    # Active agent
+├── agent-7xK9mPqR2vN4wY8j.json    # Active agent
+├── agent-m3pL9vN2xR5wY8jK1bZ.json # Active agent
 └── archived/
-    └── agent-x1y2z3w4.json    # Terminated agent
+    └── agent-a1b2c3d4e5f6g7h8i9j.json  # Terminated agent
 ```
 
 **Renaming:** If an agent wants to change its ID:
+
 1. Moves its own file to `archived/`
 2. Creates a new file with the new ID
 3. Updates all references in `tasks/`
+
+#### Agent Identity File Format
+
+The agent identity file at `agents/agent-{id}.json` contains:
+
+```json
+{
+  "id": "agent-7xK9mPqR2vN4wY8jL1bZ",
+  "environment": {
+    "os": "windows",
+    "os_version": "11",
+    "shell": "powershell",
+    "shell_version": "7.4",
+    "tools": {
+      "python": "3.11.9",
+      "node": "20.11.0",
+      "git": "2.43.0",
+      "docker": null,
+      "gh": "2.43.0"
+    },
+    "installed": ["python", "node", "git", "gh"],
+    "missing": ["docker"]
+  },
+  "status": "idle",
+  "current_task": null,
+  "current_branch": null,
+  "last_transition": "2026-05-16T10:30:00Z",
+  "transition_trigger": "first_run",
+  "created": "2026-05-16T09:00:00Z",
+  "total_tasks_completed": 0,
+  "expertise": []
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Agent ID (base62 UUID) |
+| `environment` | object | Detected platform and tools |
+| `environment.os` | string | OS name (windows, linux, macos) |
+| `environment.os_version` | string | OS version |
+| `environment.shell` | string | Shell name (powershell, bash, zsh) |
+| `environment.shell_version` | string | Shell version |
+| `environment.tools` | object | Detected tool versions (null = not found) |
+| `environment.installed` | string[] | Tool names that were found |
+| `environment.missing` | string[] | Tool names that were not found |
+| `status` | enum | Agent lifecycle state |
+| `current_task` | string\|null | Current task ID (e.g., `T-042`) |
+| `current_branch` | string\|null | Current branch name |
+| `last_transition` | ISO timestamp | When the last state change occurred |
+| `transition_trigger` | string | What caused the last transition |
+| `created` | ISO timestamp | When the agent was first created |
+| `total_tasks_completed` | int | Lifetime task count |
+| `expertise` | string[] | Agent's specialization areas |
+
+**Agent state values:**
+
+| State | Meaning |
+|-------|---------|
+| `idle` | No active task |
+| `claiming` | Initiated round-call, waiting for claim window |
+| `working` | Claim confirmed, on branch making changes |
+| `reviewing` | PR opened, waiting for CI/review |
+| `merged` | PR merged into main |
+| `terminated` | No longer active |
+
+**Local config file** (`config/local/agent.json`) contains the same fields plus:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Human-readable agent name |
+| `platform` | string | Target platform |
+| `missing_tools` | string[] | Tools not installed (duplicate of env.missing) |
 
 See [agent-identity.json](examples/agent-identity.json) for a complete example.
 
@@ -572,12 +643,6 @@ See [task-directory-structure.md](examples/task-directory-structure.md) for the 
 
 ## Multi-Platform Agent Design
 
-### Environment Declaration (Per-Agent)
-
-Each agent declares its environment in its identity file.
-
-See [agent-identity.json](examples/agent-identity.json) for a complete example.
-
 ### Task Compatibility Check
 
 Before assigning a task, check requirements against agent capabilities:
@@ -609,11 +674,7 @@ Agents run their own local commands (tests, lint, builds) in their native shell 
 
 ### Local Tool Detection
 
-When an agent wakes up, it detects its environment and updates its identity:
-
-#### Local Tool Detection Format
-
-When an agent wakes up, it runs a detection script and updates its identity file:
+When an agent wakes up, it detects its environment and updates its identity file:
 
 ```bash
 # Detection script: agent/detect-env.sh (cross-platform)
@@ -662,8 +723,6 @@ Task T-044 requires: docker
 Agent environment: docker = null
 Result: ❌ Incompatible — defer task
 ```
-
-This info is pushed to the agent identity file on next sync.
 
 ### Fallback Strategy
 
