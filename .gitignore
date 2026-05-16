@@ -1,0 +1,40 @@
+# Obsidian vault
+.obsidian/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test caches
+.pytest_cache/
+.mypy_cache/
+
+# Local plugins / packages (project-specific)
+plugins/
+local-packages/
