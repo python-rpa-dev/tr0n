@@ -100,6 +100,67 @@ See [`examples/task-claim.md`](examples/task-claim.md) for a complete example.
 
 <!-- TODO: Define objection format and resolution protocol -->
 
+#### Objection Format and Resolution Protocol
+
+An objection is a file under `tasks/objections/<task-id>/<agent>.md`:
+
+```
+tasks/active/
+└── T-042-agent-1.md
+tasks/objections/
+└── T-042-agent-1/
+    └── T-043-agent-2.md
+```
+
+**Objection file:**
+
+```markdown
+## Objecting to
+T-042 (agent-1) — claim for T-042
+
+## My overlapping task
+T-043 (agent-2) — claim for T-043
+
+## Overlap
+- src/auth/session.py  ← both tasks modify this file
+
+## Proposed resolution
+- Split: agent-1 keeps src/auth/login.py, agent-2 gets src/auth/session.py
+- Defer: T-043 returns to backlog until T-042 is merged
+```
+
+**Resolution protocol:**
+
+1. When overlap is detected, both claims marked `pending-resolution`
+2. Priority rules decide a winner automatically (if clear)
+3. If tie → user must decide (manual intervention)
+4. Loser's claim is adjusted or returned to backlog
+5. Both claims updated with resolution, move back to `pending` or `confirmed`
+
+**Auto-resolution (priority rules decide):**
+
+```
+Tie-breaker applied:
+- T-042 claimed at 10:00 (earlier) → WINNER
+- T-043 claimed at 10:05 → LOSER
+
+Resolution: T-043 scope adjusted to exclude src/auth/
+```
+
+**User resolution (tie):**
+
+```markdown
+## Resolution
+User decided: split scopes
+- agent-1 keeps src/auth/
+- agent-2 gets src/sessions/ (adjusted)
+
+## Resolved at
+2026-05-16T10:30:00Z
+## Resolved by
+user
+```
+
 ### 5. Manual CI with Non-Blocking Tasks
 
 CI is **manual** — user or another agent runs it after an agent opens a PR.
