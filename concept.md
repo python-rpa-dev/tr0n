@@ -100,6 +100,55 @@ See [`examples/task-claim.md`](examples/task-claim.md) for a complete example.
 
 <!-- TODO: Define objection format and resolution protocol -->
 
+### 5. Manual CI with Non-Blocking Tasks
+
+CI is **manual** — user or another agent runs it after an agent opens a PR.
+
+**PR statuses:**
+
+| Status | Meaning | Can agent work on something else? |
+|--------|---------|-----------------------------------|
+| `awaiting-ci` | PR open, CI not yet run | Yes — non-blocking tasks |
+| `ci-passed` | CI passed, ready to merge | Yes |
+| `ci-failed` | CI failed, needs fix | No — agent must fix |
+| `ready-to-merge` | Approved, waiting for human merge | Yes |
+
+**Agent workflow on task completion:**
+
+1. Agent opens PR → marks as `awaiting-ci`
+2. Agent checks PR status → if `awaiting-ci`, looks for non-blocking tasks
+3. Agent picks up another task from backlog (no dependency on pending PR)
+4. When CI passes → PR marked `ready-to-merge`
+5. When CI fails → agent gets failures, fixes, re-opens `awaiting-ci`
+
+**Non-blocking task detection:**
+
+Tasks declare dependencies:
+
+```markdown
+## Task
+T-045: Add logging module
+
+## Depends-on
+- T-042 (auth)  ← blocker
+
+## Scope
+- src/logging/
+```
+
+Agent checks backlog for tasks with **no dependency** on the pending PR.
+
+**Agent decision logic:**
+
+```
+PR #42 status: awaiting-ci
+  │
+  └─→ Check backlog for non-blocking tasks
+       │
+       ├─→ Found T-045 (no deps) → pick it up
+       └─→ No non-blocking tasks → idle / wait
+```
+
 ### 2. Feature Flag / Modular Architecture
 
 Design the codebase so agents work in isolated modules with stable interfaces.
