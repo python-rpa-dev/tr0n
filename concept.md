@@ -24,7 +24,7 @@ When 3+ agents' scopes overlap, deterministic priority rules decide:
 |----------|----------------------------------------|-----------------------------------------------|
 | **1**    | Agent has **earlier confirmed claim**  | Winner — other agents must defer or adjust    |
 | **2**    | Same claim time → **shorter scope**    | Winner — less impact, easier to merge         |
-| **3**    | Same scope size → **higher task priority** | Winner — business criticality wins         |
+| **3**    | Same scope size → **higher task priority** | Winner — business criticality wins       |
 | **4**    | Same priority → **first to claim**     | Winner — FIFO, no randomness                  |
 
 **Overlap resolution strategies:**
@@ -99,19 +99,19 @@ See [task-directory-structure.md](examples/task-directory-structure.md) for the 
 | `agent`      | string         | Agent ID (e.g., `agent-1`)                     |
 | `scope`      | list           | List of file/module paths being modified       |
 | `claimed_at` | ISO timestamp  | When the claim was created                     |
-| `claim_window`| duration      | How long to wait for objections (e.g., `1h`)   |
+| `claim_window` | duration     | How long to wait for objections (e.g., `1h`) |
 | `expires_at` | ISO timestamp  | Calculated: `claimed_at + claim_window`        |
 | `status`     | enum           | `pending`                                      |
 
 **Optional fields:**
 
-| Field           | Type    | Description                              |
-|-----------------|---------|------------------------------------------|
-| `resolution`    | string  | Resolution result (set when auto-resolved)|
-| `adjusted_at`   | ISO timestamp | When scope was adjusted             |
-| `adjusted_reason`| string | Why scope was adjusted                   |
-| `objections`    | list    | List of objection file paths             |
-| `notes`         | string  | Any additional context                   |
+| Field           | Type            | Description                              |
+|-----------------|-----------------|------------------------------------------|
+| `resolution`    | string          | Resolution result (set when auto-resolved) |
+| `adjusted_at`   | ISO timestamp   | When scope was adjusted                  |
+| `adjusted_reason`| string         | Why scope was adjusted                   |
+| `objections`    | list            | List of objection file paths             |
+| `notes`         | string          | Any additional context                   |
 
 **Validation rules:**
 
@@ -124,8 +124,8 @@ See [task-directory-structure.md](examples/task-directory-structure.md) for the 
 
 **Computed fields (auto-generated):**
 
-| Field        | Source                      |
-|--------------|-----------------------------|
+| Field        | Source                    |
+|--------------|---------------------------|
 | `expires_at` | `claimed_at + claim_window` |
 | `status`     | Automatically updated by system |
 
@@ -213,7 +213,7 @@ CI is **manual** — user or another agent runs it after an agent opens a PR.
 | `awaiting-ci`| PR open, CI not yet run        | Yes — non-blocking tasks          |
 | `ci-passed`  | CI passed, ready to merge      | Yes                               |
 | `ci-failed`  | CI failed, needs fix           | No — agent must fix               |
-| `ready-to-merge` | Approved, waiting for human merge | Yes                          |
+| `ready-to-merge` | Approved, waiting for human merge | Yes                       |
 
 **Agent workflow on task completion:**
 
@@ -276,9 +276,9 @@ Pin agent environments in Docker containers for deterministic, reproducible buil
 | **idle**     | Agent exists but has no active task                 |
 | **claiming** | Agent initiated a round-call, waiting for claim window |
 | **working**  | Claim confirmed, agent is on its branch making changes |
-| **reviewing**| PR opened, waiting for CI/review results            |
-| **merged**   | PR merged into `main`                               |
-| **terminated**| Agent shut down, no longer active                  |
+| **reviewing**| PR opened, waiting for CI/review results               |
+| **merged**   | PR merged into `main`                                  |
+| **terminated**| Agent shut down, no longer active                     |
 
 <!-- TODO: Define transition rules — what triggers each state change, who can initiate it -->
 
@@ -317,15 +317,15 @@ When a transition happens, the agent updates its identity file:
 
 | Transition               | Trigger                                    |
 |--------------------------|--------------------------------------------|
-| `pending → confirmed`    | Claim window expires with no objections    |
-| `pending → pending-resolution` | Objection received                     |
-| `pending → rejected`     | Priority rules decide loser                |
-| `confirmed → active`     | Agent starts working                       |
-| `active → resolved`      | PR merged                                  |
-| `active → rejected`      | User forces cancellation                   |
-| `pending-resolution → confirmed` | Auto-resolved (winner)              |
-| `pending-resolution → active`    | Winner starts working               |
-| `pending-resolution → rejected`  | Loser's claim rejected              |
+| `pending → confirmed`    | Claim window expires with no objections              |
+| `pending → pending-resolution` | Objection received                            |
+| `pending → rejected`     | Priority rules decide loser                          |
+| `confirmed → active`     | Agent starts working                                 |
+| `active → resolved`      | PR merged                                            |
+| `active → rejected`      | User forces cancellation                             |
+| `pending-resolution → confirmed` | Auto-resolved (winner)                        |
+| `pending-resolution → active`    | Winner starts working                         |
+| `pending-resolution → rejected`  | Loser's claim rejected                          |
 
 **Edge cases:**
 
@@ -360,6 +360,72 @@ idle
 Each agent has a persistent identity file:
 
 <!-- TODO: Define agent ID naming convention and uniqueness guarantee -->
+
+#### Agent ID Naming Convention
+
+**Format:** `agent-{base62-encoded-uuid}`
+
+Examples: `agent-7xK9mPqR2vN4wY8jL1bZ`, `agent-m3pL9vN2xR5wY8jK1bZ`
+
+**How uniqueness is guaranteed:**
+
+1. On first run, agent generates a UUID v4 (122 random bits)
+2. Encodes the UUID in base62 (22 characters)
+3. Creates file `agents/agent-{id}.json`
+4. Collision probability: negligible (same as raw UUID v4)
+
+**Why base62:**
+
+| Format                | Length    | Safe?                    |
+|-----------------------|-----------|--------------------------|
+| Full UUID (hyphenated) | 36 chars  | Yes, but long filenames  |
+| Full UUID (hex)        | 32 chars  | Yes, still long          |
+| Truncated hex (8 chars)| 8 chars   | No — birthday paradox    |
+| Base62-encoded UUID    | 22 chars  | Yes — best balance       |
+
+**Two-location identity:**
+
+| Location                         | Purpose                                           | Tracked? |
+|----------------------------------|---------------------------------------------------|----------|
+| `config/local/agent.json` (local) | Agent's own identity and config — private        | ❌ No (gitignored) |
+| `agents/agent-{uuid}.json` (repo) | Agent state (status, task, branch) — shared    | ✅ Yes   |
+
+**Agent identity resolution:**
+
+1. Agent reads its own ID from `config/local/agent.json` (local, private)
+2. Agent reads other agents' states from `agents/` (repo, shared)
+3. Agent reads its own state from `agents/agent-{id}.json` (repo, shared)
+
+**How the agent knows it's itself:**
+
+Compares its local config ID against files in `agents/`. If the ID matches its own config → it's itself. If different → it's another agent.
+
+**First run flow:**
+
+```
+Agent starts
+  │
+  ├─→ config/local/agent.json exists?
+  │     ├─→ Yes → read ID from config
+  │     └─→ No → generate UUID
+  │
+  └─→ Write ID to config/local/agent.json
+```
+
+**Agent ID file in repo:**
+
+```
+agents/
+├── agent-a3f8b2c1.json    # Active agent
+├── agent-d7e9f012.json    # Active agent
+└── archived/
+    └── agent-x1y2z3w4.json    # Terminated agent
+```
+
+**Renaming:** If an agent wants to change its ID:
+1. Moves its own file to `archived/`
+2. Creates a new file with the new ID
+3. Updates all references in `tasks/`
 
 See [agent-identity.json](examples/agent-identity.json) for a complete example.
 
@@ -555,21 +621,21 @@ This way **opencode**, **aichat**, or any other LLM client can drive the agent a
 
 **Dependencies:** zero npm packages. Uses only Node built-in modules:
 
-| Need | Built-in module |
-|------|-----------------|
-| Git commands | `child_process.exec` |
-| JSON | `fs.readFileSync` |
-| File I/O | `fs` |
-| Path handling | `path` |
-| Argument parsing | `process.argv` |
+| Need             | Built-in module      |
+|------------------|----------------------|
+| Git commands     | `child_process.exec` |
+| JSON             | `fs.readFileSync`    |
+| File I/O         | `fs`                 |
+| Path handling    | `path`               |
+| Argument parsing | `process.argv`       |
 
 **Operations via:**
 
-| Operation | Tool |
-|-----------|------|
+| Operation                    | Tool              |
+|------------------------------|-------------------|
 | Git operations (fetch, checkout, push) | `git` CLI |
-| PR creation/management | `gh` CLI |
-| File updates (config, claims) | `git` (commit + push) |
+| PR creation/management       | `gh` CLI          |
+| File updates (config, claims)| `git` (commit + push) |
 
 No HTTP library needed — `gh` handles everything. If `gh` is not available, the agent can use `git` to push and the user manually creates the PR.
 

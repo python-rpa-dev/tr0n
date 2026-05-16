@@ -8,6 +8,7 @@ Instructions for AI agents working in this repository.
 - Check for existing `.gitignore` entries before adding new folders (especially `node_modules/`, `.venv/`, `plugins/`, `local-packages/`).
 - Use the project name **tr0n** (with a zero), not "tron".
 - Git credentials: `python-rpa-dev <108140019+python-rpa-dev@users.noreply.github.com>`
+- All markdown tables must have aligned columns for readability in text viewers.
 
 ## Workflow
 
