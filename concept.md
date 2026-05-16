@@ -16,6 +16,42 @@ Each LLM gets its own feature branch, works independently, and opens a PR when d
 
 <!-- TODO: Define conflict resolution priority rules — which side wins when 3+ agents overlap -->
 
+#### Conflict Resolution Priority Rules (3+ Agents)
+
+When 3+ agents' scopes overlap, deterministic priority rules decide:
+
+| Priority | Condition | Action |
+|----------|-----------|--------|
+| **1** | Agent has **earlier confirmed claim** | Winner — other agents must defer or adjust |
+| **2** | Same claim time → **shorter scope** | Winner — less impact, easier to merge |
+| **3** | Same scope size → **higher task priority** | Winner — business criticality wins |
+| **4** | Same priority → **first to claim** | Winner — FIFO, no randomness |
+
+**Overlap resolution strategies:**
+
+- **Scope splitting:** earlier claimant keeps the file, later claimant adjusts scope
+- **Task deferral:** lower-priority task returns to backlog
+- **Task merging:** tightly coupled tasks are assigned to one agent
+
+**Decision flow:**
+
+```
+Claim overlap detected?
+  │
+  ├─→ No overlap → both proceed
+  │
+  └─→ Overlap → check priority
+       │
+       ├─→ Clear winner (rule 1-4) → winner proceeds, loser adjusts
+       │
+       └─→ Tie → user decides
+            │
+            ├─→ Split scopes → both proceed with adjusted scope
+            ├─→ Defer one → one proceeds, other returns to backlog
+            └─→ Merge tasks → one agent handles both
+
+<!-- TODO: Future — manual operator override tool for conflict resolution -->
+
 #### Conflict Resolution
 
 Hybrid approach: auto-merge when files don't overlap, agent-resolve when they do, human only as last resort.
