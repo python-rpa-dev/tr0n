@@ -1,0 +1,8 @@
+{
+  "claim_window_default": "1h",
+  "auto_confirm": true,
+  "conflict_strategy": "defer-later",
+  "stale_branch_action": "rebase",
+  "ci_timeout": 300,
+  "max_concurrent_agents": 5
+}

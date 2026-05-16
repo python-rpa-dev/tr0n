@@ -14,6 +14,8 @@ Each LLM gets its own feature branch, works independently, and opens a PR when d
 - CI/PR checks catch integration issues before main is affected
 - Risk: merge conflicts require human intervention or automated conflict resolution
 
+<!-- TODO: Define conflict resolution priority rules — which side wins when 3+ agents overlap -->
+
 #### Conflict Resolution
 
 Hybrid approach: auto-merge when files don't overlap, agent-resolve when they do, human only as last resort.
@@ -32,6 +34,8 @@ See [`examples/pr-template.md`](examples/pr-template.md) for the full template.
 
 #### Stale Base Detection
 
+<!-- TODO: Decide on rebase vs merge strategy for stale branches -->
+
 Before starting: fetch latest `main`, record base commit hash. During CI: check if `main` has moved, auto-rebase if so.
 
 #### Round-Call (Pre-Flight Announcement)
@@ -46,6 +50,8 @@ See [`examples/task-directory-structure.md`](examples/task-directory-structure.m
 
 **Claim file format:**
 
+<!-- TODO: Define the full spec for claim file fields and validation rules -->
+
 See [`examples/task-claim.md`](examples/task-claim.md) for a complete example.
 
 **Flexible claim window:**
@@ -55,6 +61,8 @@ See [`examples/task-claim.md`](examples/task-claim.md) for a complete example.
 - Expired claims can be reclaimed, reassigned, or discarded
 
 **Conflict resolution:** when two claims overlap, coordinator decides — merge scopes, defer the later claim, or split the work.
+
+<!-- TODO: Define objection format and resolution protocol -->
 
 ### 2. Feature Flag / Modular Architecture
 
@@ -85,6 +93,8 @@ Pin agent environments in Docker containers for deterministic, reproducible buil
 | **merged** | PR merged into `main` |
 | **terminated** | Agent shut down, no longer active |
 
+<!-- TODO: Define transition rules — what triggers each state change, who can initiate it -->
+
 ### Lifecycle Flow
 
 ```
@@ -111,6 +121,8 @@ idle
 
 Each agent has a persistent identity file:
 
+<!-- TODO: Define agent ID naming convention and uniqueness guarantee -->
+
 See [`examples/agent-identity.json`](examples/agent-identity.json) for a complete example.
 
 ### Task Assignment
@@ -120,6 +132,8 @@ A coordinator (or user) assigns tasks to agents:
 1. Task is created in a `tasks/` directory (separate from active claims)
 2. Coordinator matches task to agent by **expertise** or **availability**
 3. Agent receives the task and enters the **claiming** stage
+
+<!-- TODO: Define task ID naming convention and uniqueness -->
 
 See [`examples/task-directory-structure.md`](examples/task-directory-structure.md) for the full layout.
 
@@ -178,6 +192,8 @@ Agents run their own local commands (tests, lint, builds) in their native shell 
 
 When an agent wakes up, it detects its environment and updates its identity:
 
+<!-- TODO: Define the detection script or command format -->
+
 ```
 Detected:
 - OS: Windows 11
@@ -197,7 +213,31 @@ When a task requires something an agent doesn't have:
 2. **Suggest alternatives** — installation instructions for the platform
 3. **Defer** — task stays in backlog until a compatible agent picks it up
 
+## Config File Convention
+
+To prevent personal config files from being overwritten by future updates, the repo uses a **template + local** pattern.
+
+```
+config/
+├── templates/
+│   ├── agent.json.example    # Template — tracked in git
+│   └── settings.json.example # Template — tracked in git
+└── local/                    # User-specific — gitignored
+    ├── agent.json            # Copy from agent.json.example
+    └── settings.json         # Copy from settings.json.example
+```
+
+Users copy `.example` files to their local versions. Local versions are gitignored, so:
+- `git pull` never overwrites user configs
+- Templates can be updated without affecting local files
+- Diff shows only template changes, not user noise
+
+**Agent state files** (`agents/`, `tasks/`) are repo-state and remain tracked.
+
 ## Key Principles
+
+<!-- TODO: Add principle about test coverage requirements per agent -->
+<!-- TODO: Add principle about documentation updates required alongside code changes -->
 
 | Principle | Why it matters |
 |-----------|----------------|

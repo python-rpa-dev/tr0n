@@ -1,0 +1,17 @@
+{
+  "id": "agent-{id}",
+  "name": "{agent-name}",
+  "platform": "{platform}",
+  "shell": "{shell}",
+  "created": "{date}",
+  "status": "idle",
+  "current_task": null,
+  "current_branch": null,
+  "total_tasks_completed": 0,
+  "expertise": [],
+  "python": null,
+  "node": null,
+  "installed_tools": ["git"],
+  "missing_tools": [],
+  "last_sync": null
+}

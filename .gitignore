@@ -38,3 +38,6 @@ Thumbs.db
 # Local plugins / packages (project-specific)
 plugins/
 local-packages/
+
+# Local user config (copy from config/templates/*.example)
+config/local/
