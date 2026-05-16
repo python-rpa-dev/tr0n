@@ -259,6 +259,270 @@ Tests cover:
 5. Claim expiration
 6. Conflict resolution priority rules
 
+## LLM Client Discovery & Integration
+
+The tr0n agent is a Git coordination tool — it does not call any LLM API itself. LLM clients discover and invoke the agent through different mechanisms depending on the client.
+
+### How LLM clients discover the agent
+
+There are **two discovery mechanisms**:
+
+| Mechanism | How it works | Used by |
+|-----------|-------------|---------|
+| **File-based** | Client reads `tools/` directory or config for tool definitions | opencode, aichat |
+| **Prompt-based** | Agent path and commands documented in system prompt or user instructions | LM Studio, Ollama |
+
+### opencode — Tool Registration
+
+opencode discovers tools via its configuration. Register the tr0n agent as a tool:
+
+**Step 1: Create a tool definition file**
+
+Create `tools/tr0n-agent.json` in your opencode workspace:
+
+```json
+{
+  "name": "tr0n-agent",
+  "description": "Git coordination agent for multi-LLM collaboration. Handles task claiming, conflict detection, branch management, and PR creation.",
+  "command": ["node", "agent/agent.js", "--protocol"],
+  "working_dir": ".",
+  "stdin_protocol": true,
+  "response_format": "json",
+  "aliases": ["tr0n", "agent"],
+  "commands": [
+    { "name": "claim", "description": "Claim a task for work. Usage: claim T-042 src/auth/ tests/test_auth/" },
+    { "name": "check-conflicts", "description": "Check for scope conflicts with other active agents" },
+    { "name": "create-branch", "description": "Create a feature branch. Usage: create-branch agent-1/T-042" },
+    { "name": "push", "description": "Push the current branch to remote" },
+    { "name": "create-pr", "description": "Create a PR. Usage: create-pr agent-1/T-042 'Add auth module'" },
+    { "name": "list-tasks", "description": "List all pending tasks in backlog" },
+    { "name": "list-agents", "description": "List all active agents and their states" },
+    { "name": "status", "description": "Show current branch, remote, and commit status" }
+  ]
+}
+```
+
+**Step 2: Register in opencode config**
+
+Add to your opencode config (`~/.config/opencode/opencode.json`):
+
+```json
+{
+  "tools": {
+    "paths": ["./tools"]
+  }
+}
+```
+
+**Step 3: Invoke in opencode**
+
+```
+> Use tr0n-agent: claim T-042 src/auth/
+```
+
+opencode will:
+1. Launch `node agent/agent.js --protocol` in the repo directory
+2. Send `claim T-042 src/auth/` via stdin
+3. Read the JSON response from stdout
+4. Display the result to the user
+
+### LM Studio — System Prompt Integration
+
+LM Studio discovers the agent through the system prompt. There is no automatic discovery — the user provides the tool definition in the prompt.
+
+**Step 1: Add to system prompt**
+
+```
+You have access to a Git coordination tool called tr0n-agent.
+When you need to work on a task in this repository, use it.
+
+Tool: tr0n-agent
+Command: node agent/agent.js --protocol
+Working directory: the repository root
+
+Available commands (send one at a time):
+- claim <task-id> <scope...> — Claim a task for work
+- check-conflicts — Check for scope conflicts with other agents
+- create-branch <branch-name> — Create a feature branch
+- push — Push the current branch
+- create-pr <branch> <title> — Create a pull request
+- list-tasks — List pending tasks
+- list-agents — List active agents
+- status — Show current branch and commit status
+
+The tool responds with JSON. Parse the "result" field for the outcome.
+If the response has "status": "error", show the error to the user.
+```
+
+**Step 2: Use via chat**
+
+```
+User: Work on T-042 — add auth module
+
+Assistant: I'll use the tr0n-agent tool to claim the task and create a branch.
+
+> tr0n-agent: claim T-042 src/auth/ tests/test_auth/
+< {"status":"ok","result":{"action":"claim-created","task":"T-042",...}}
+
+> tr0n-agent: create-branch agent-1/T-042
+< {"status":"ok","result":{"branch":"agent-1/T-042",...}}
+
+Now I'll work on the task on this branch...
+```
+
+**Step 3: Script wrapper (optional)**
+
+For easier invocation, create a wrapper script that the user can reference:
+
+```bash
+# launch-tr0n.sh (bash)
+echo "$1" | node agent/agent.js --protocol | head -1
+```
+
+```powershell
+# launch-tr0n.ps1 (PowerShell)
+"$args" | node agent/agent.js --protocol | Select-Object -First 1
+```
+
+```cmd
+:: launch-tr0n.cmd (cmd.exe)
+node agent\agent.js --protocol <nul
+```
+
+### Ollama — Custom Tool via System Prompt
+
+Ollama discovers the agent through the system prompt, similar to LM Studio. There is no automatic discovery.
+
+**Step 1: Create a custom tool definition**
+
+Save as `tools/tr0n-agent.json` in your Ollama workspace:
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "tr0n_agent",
+    "description": "Git coordination agent for multi-LLM collaboration. Handles task claiming, conflict detection, branch management, and PR creation.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Command to execute (claim, check-conflicts, create-branch, push, create-pr, list-tasks, list-agents, status)"
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Arguments for the command"
+        }
+      },
+      "required": ["command"]
+    }
+  }
+}
+```
+
+**Step 2: Add to system prompt**
+
+```
+You have access to a Git coordination tool called tr0n-agent.
+It manages task claiming, conflict detection, branch creation, and PR submission.
+
+When the user asks you to work on a task:
+1. Call tr0n_agent with command="claim" and args=[task-id, scope...]
+2. Parse the JSON response
+3. If no conflicts, call tr0n_agent with command="create-branch"
+4. Work on the task
+5. When done, call tr0n_agent with command="push" and command="create-pr"
+
+If the tool returns an error, explain the issue to the user.
+```
+
+**Step 3: Invoke via API**
+
+When Ollama calls the function, execute:
+
+```bash
+# For claim command
+echo "claim T-042 src/auth/" | node agent/agent.js --protocol | head -1
+
+# For other commands
+echo "push" | node agent/agent.js --protocol | head -1
+```
+
+### aichat — Shell Function / Alias
+
+aichat discovers the agent via shell functions or aliases. No automatic discovery — the user configures it.
+
+**Step 1: Add shell function**
+
+Add to your shell config (`~/.bashrc`, `~/.zshrc`, or `~/.config/powershell/Microsoft.PowerShell_profile.ps1`):
+
+**bash/zsh:**
+```bash
+# tr0n agent wrapper
+tr0n() {
+  if [ "$1" = "--protocol" ]; then
+    node agent/agent.js --protocol
+  else
+    node agent/agent.js "$@"
+  fi
+}
+
+# Protocol helper — send a command and get JSON response
+tr0n-protocol() {
+  echo "$1" | node agent/agent.js --protocol | head -1
+}
+
+# Task launcher — quick task execution
+tr0n-task() {
+  node agent/agent.js --task "$1"
+}
+```
+
+**PowerShell:**
+```powershell
+# tr0n agent wrapper
+function tr0n {
+  if ($args[0] -eq "--protocol") {
+    node agent/agent.js --protocol
+  } else {
+    node agent/agent.js @args
+  }
+}
+
+# Protocol helper
+function tr0n-protocol {
+  $args -join ' ' | node agent/agent.js --protocol | Select-Object -First 1
+}
+
+# Task launcher
+function tr0n-task {
+  node agent/agent.js --task $args[0]
+}
+```
+
+**Step 2: Use in aichat**
+
+```bash
+# Execute a task
+tr0n-task T-042
+
+# Protocol mode via pipe
+echo "list-tasks" | tr0n-protocol
+```
+
+### Discovery Summary
+
+| Client | Discovery mechanism | Auto-discovery? | Setup required |
+|--------|-------------------|-----------------|----------------|
+| **opencode** | Tool definition file in `tools/` | No | Create `tools/tr0n-agent.json` + config |
+| **LM Studio** | System prompt | No | Add tool definition to system prompt |
+| **Ollama** | System prompt + function calling | No | Add tool definition to system prompt |
+| **aichat** | Shell function/alias | No | Add function to shell config |
+
+All clients require **manual setup** — there is no automatic discovery. This is by design: the agent is a Git tool, not an LLM service. Each client needs to know how to invoke it.
+
 ## LLM Client Integration
 
 ### opencode

@@ -22,7 +22,7 @@ node agent/agent.js --task T-042
 node agent/agent.js --protocol
 ```
 
-See [docs/agent-guide.md](docs/agent-guide.md) for full installation, launching, and debugging instructions.
+See [agent-guide.md](docs/agent-guide.md) for full installation, launching, and debugging instructions.
 
 ## Structure
 
@@ -33,7 +33,8 @@ tr0n/
 ├── AGENTS.md               # Instructions for AI agents
 ├── .gitignore
 ├── docs/                   # User-facing documentation
-│   └── agent-guide.md      # Installation, launch, debugging guide
+│   ├── agent-guide.md      # Installation, launch, debugging guide
+│   └── LLM-client-discovery.md  # How each LLM client discovers and integrates the agent
 ├── agent/                  # Agent implementation (zero npm dependencies)
 │   ├── agent.js            # Main entry point (CLI + protocol)
 │   ├── claim.js            # Claim lifecycle (create, confirm, reject)
@@ -69,7 +70,7 @@ tr0n/
 ## Documents
 
 - **[concept.md](concept.md)** — Detailed discussion of collaboration approaches, key principles, and real-world references.
-- **[docs/agent-guide.md](docs/agent-guide.md)** — Installation, launch, debugging, and LLM client integration guide.
+- **[agent-guide.md](docs/agent-guide.md)** — Installation, launch, debugging, LLM client discovery, and integration guide.
 - **[AGENTS.md](AGENTS.md)** — Instructions for AI agents working in this repository.
 
 ## Status
