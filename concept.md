@@ -89,6 +89,46 @@ See [task-directory-structure.md](examples/task-directory-structure.md) for the 
 
 <!-- TODO: Define the full spec for claim file fields and validation rules -->
 
+#### Claim File Field Spec
+
+**Required fields:**
+
+| Field        | Type           | Description                                    |
+|--------------|----------------|------------------------------------------------|
+| `task`       | string         | Task ID (e.g., `T-042`)                        |
+| `agent`      | string         | Agent ID (e.g., `agent-1`)                     |
+| `scope`      | list           | List of file/module paths being modified       |
+| `claimed_at` | ISO timestamp  | When the claim was created                     |
+| `claim_window`| duration      | How long to wait for objections (e.g., `1h`)   |
+| `expires_at` | ISO timestamp  | Calculated: `claimed_at + claim_window`        |
+| `status`     | enum           | `pending`                                      |
+
+**Optional fields:**
+
+| Field           | Type    | Description                              |
+|-----------------|---------|------------------------------------------|
+| `resolution`    | string  | Resolution result (set when auto-resolved)|
+| `adjusted_at`   | ISO timestamp | When scope was adjusted             |
+| `adjusted_reason`| string | Why scope was adjusted                   |
+| `objections`    | list    | List of objection file paths             |
+| `notes`         | string  | Any additional context                   |
+
+**Validation rules:**
+
+1. `expires_at` must be in the future
+2. `scope` must not be empty
+3. `scope` paths must use forward slashes
+4. `claim_window` must be a valid duration (parsable)
+5. `status` must be a valid enum value
+6. `claimed_at` must be before `expires_at`
+
+**Computed fields (auto-generated):**
+
+| Field        | Source                      |
+|--------------|-----------------------------|
+| `expires_at` | `claimed_at + claim_window` |
+| `status`     | Automatically updated by system |
+
 See [task-claim.md](examples/task-claim.md) for a complete example.
 
 **Flexible claim window:**
