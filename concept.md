@@ -51,6 +51,26 @@ Claim overlap detected?
             └─→ Merge tasks → one agent handles both
 ```
 
+**Manual operator override:**
+
+When auto-resolution rules are insufficient, a user can manually override:
+
+```bash
+# Override: force agent-2 to win, agent-1 defers
+tr0n-cli resolve T-042 --winner agent-2 --action defer
+```
+
+The override is recorded in the claim file:
+
+```json
+{
+  "resolution": "manual-override",
+  "resolved_by": "user",
+  "resolved_at": "2026-05-16T11:00:00Z",
+  "override_reason": "Business priority: agent-2's task is more urgent"
+}
+```
+
 <!-- TODO: Future — manual operator override tool for conflict resolution -->
 
 #### Conflict Resolution
@@ -71,9 +91,48 @@ See [pr-template.md](examples/pr-template.md) for the full template.
 
 #### Stale Base Detection
 
-<!-- TODO: Decide on rebase vs merge strategy for stale branches -->
-
 Before starting: fetch latest `main`, record base commit hash. During CI: check if `main` has moved, auto-rebase if so.
+
+**Rebase vs merge strategy:**
+
+| Strategy | Pros                      | Cons                          | Recommendation |
+|----------|---------------------------|-------------------------------|----------------|
+| Rebase   | Linear history, clean     | Rewrites history, risky       | **Default** — when no other agent's work will be lost |
+| Merge    | Preserves history         | Merge commits, noisy history  | When other agents' branches are also active |
+
+**Decision logic:**
+
+```
+Branch is stale? (main has moved since base commit)
+  │
+  ├─→ No → proceed normally
+  │
+  └─→ Yes → check if other agents have active branches
+       │
+       ├─→ No other active branches → rebase onto latest main
+       │
+       └─→ Other active branches exist → merge main into branch
+            │
+            ├─→ No conflicts → auto-merge, continue working
+            └─→ Conflicts → agent resolves, pushes, re-runs CI
+```
+
+**Stale branch handling commands:**
+
+```bash
+# Rebase (when safe)
+git fetch origin
+git rebase origin/main
+
+# Merge (when other branches exist)
+git fetch origin
+git merge origin/main --no-edit
+
+# If merge conflicts
+git mergetool  # or manual resolution
+git add .
+git commit --no-edit
+```
 
 #### Round-Call (Pre-Flight Announcement)
 
@@ -437,7 +496,63 @@ A coordinator (or user) assigns tasks to agents:
 2. Coordinator matches task to agent by **expertise** or **availability**
 3. Agent receives the task and enters the **claiming** stage
 
-<!-- TODO: Define task ID naming convention and uniqueness -->
+#### Task ID Naming Convention
+
+**Format:** `T-NNN` (sequential, zero-padded to 3 digits)
+
+Examples: `T-001`, `T-042`, `T-100`
+
+**How uniqueness is guaranteed:**
+
+1. Coordinator (user or system) maintains a counter in `config/local/coordinator.json`
+2. Each new task increments the counter by 1
+3. Counter is never reused — even completed/terminated tasks keep their ID
+4. Counter persists across agent sessions and restarts
+
+**Why sequential:**
+
+| Format          | Example      | Pros                      | Cons                        |
+|-----------------|--------------|---------------------------|-----------------------------|
+| Sequential      | `T-042`     | Ordering, simplicity      | Requires counter management |
+| Hash-based      | `T-a3f8b2`  | No coordination needed    | No ordering, hard to read   |
+| Timestamp-based | `T-20260516`| Self-describing           | Collisions, no ordering     |
+
+#### Task Definition File
+
+Each task gets a file in `tasks/backlog/T-NNN-<desc>.md`:
+
+```markdown
+## Task
+T-042: Add user authentication module
+
+## Assigned to
+agent-7xK9mPqR2vN4wY8jL1bZ
+
+## Priority
+high
+
+## Scope
+- src/auth/
+- tests/test_auth/
+
+## Depends-on
+- T-040 (database setup)
+
+## Requirements
+- platform: any
+- python >= 3.11
+- tool: git
+
+## Test coverage
+- Unit tests: 80% minimum
+- Integration tests: auth flow
+
+## Documentation
+- Update README.md
+- Update API docs
+```
+
+See [task-definition.md](examples/task-definition.md) for a complete example.
 
 See [task-directory-structure.md](examples/task-directory-structure.md) for the full layout.
 
@@ -496,16 +611,56 @@ Agents run their own local commands (tests, lint, builds) in their native shell 
 
 When an agent wakes up, it detects its environment and updates its identity:
 
-<!-- TODO: Define the detection script or command format -->
+#### Local Tool Detection Format
+
+When an agent wakes up, it runs a detection script and updates its identity file:
+
+```bash
+# Detection script: agent/detect-env.sh (cross-platform)
+# Output format (machine-readable):
+os=windows version=11 shell=powershell version=7.4
+python=3.11.9 node=20.11.0 git=2.43.0 docker=not-found
+```
+
+**Detection commands (cross-platform):**
+
+| Tool    | Windows (PowerShell)                          | Linux/macOS (bash)           |
+|---------|-----------------------------------------------|------------------------------|
+| OS      | `$env:OS` / `systeminfo`                      | `uname -s` / `sw_vers`       |
+| Shell   | `$PSVersionTable.PSVersion`                   | `$SHELL` / `bash --version`  |
+| Python  | `python --version`                            | `python3 --version`           |
+| Node    | `node --version`                              | `node --version`               |
+| Git     | `git --version`                               | `git --version`                |
+| Docker  | `docker --version`                            | `docker --version`             |
+
+**Identity file update:**
+
+```json
+{
+  "id": "agent-7xK9mPqR2vN4wY8jL1bZ",
+  "environment": {
+    "os": "windows",
+    "os_version": "11",
+    "shell": "powershell",
+    "shell_version": "7.4",
+    "tools": {
+      "python": "3.11.9",
+      "node": "20.11.0",
+      "git": "2.43.0",
+      "docker": null
+    }
+  },
+  "status": "idle",
+  "last_sync": "2026-05-16T10:30:00Z"
+}
+```
+
+**Compatibility check:** before task assignment, the coordinator compares task requirements against `environment.tools`:
 
 ```
-Detected:
-- OS: Windows 11
-- Shell: PowerShell 7.4
-- Python: 3.11.9
-- Node: 20.11.0
-- git: 2.43.0
-- docker: not found
+Task T-044 requires: docker
+Agent environment: docker = null
+Result: ❌ Incompatible — defer task
 ```
 
 This info is pushed to the agent identity file on next sync.
@@ -652,7 +807,38 @@ agent/
 
 Single-file version is also possible — `agent.js` with everything inline.
 
-## Key Principles
+### Language for Agent Implementation
+
+**Decision: JavaScript (Node.js)**
+
+| Criterion              | JavaScript | Python   | Shell    | Rust     |
+|------------------------|------------|----------|----------|----------|
+| Zero dependencies      | ✅ (built-in modules) | ❌ (needs packages) | ✅ | ❌ (compiler) |
+| JSON handling          | ✅ (built-in) | ✅ (built-in) | ❌ | ✅ (serde) |
+| Git CLI integration    | ✅ (`child_process`) | ✅ (`subprocess`) | ✅ | ✅ (std::process) |
+| `gh` CLI integration   | ✅ | ✅ | ✅ | ✅ |
+| Cross-platform         | ✅ | ✅ | ⚠️ (shell differences) | ✅ |
+| Community examples     | ✅✅✅ | ✅✅✅ | ✅ | ✅ |
+| Install size           | ✅ (~20MB) | ✅ (~50MB) | ✅ | ⚠️ (compiler toolchain) |
+
+**Chosen approach:**
+
+- Runtime: Node.js (built-in modules only, zero npm dependencies)
+- Git operations: `git` CLI via `child_process.exec`
+- PR operations: `gh` CLI (GitHub CLI)
+- Config/claims: JSON file I/O via `fs` module
+- Structure: modular files (`agent.js`, `claim.js`, `git.js`, `conflict.js`, `protocol.js`)
+- Fallback: if `gh` is unavailable, agent pushes branch and user manually creates PR
+
+**Why not Python:**
+- Python requires virtualenv/dependencies for most useful operations
+- Node.js is already installed on most dev machines
+- Zero-dependency requirement favors Node built-ins over Python packages
+
+**Why not shell:**
+- Cross-platform compatibility (Windows PowerShell vs bash)
+- JSON parsing is fragile in shell
+- Less maintainable for complex logic
 
 <!-- TODO: Add principle about test coverage requirements per agent -->
 <!-- TODO: Add principle about documentation updates required alongside code changes -->
@@ -664,6 +850,34 @@ Single-file version is also possible — `agent.js` with everything inline.
 | Frequent integration   | Catch conflicts early, not at the end                    |
 | Deterministic outputs  | Reduces "two agents do different things to the same code"|
 | Clear ownership        | Assign files/modules to specific agents when possible    |
+| Test coverage required | Every agent must update tests for its changes            |
+| Docs update required   | Every agent must update docs alongside code changes      |
+
+#### Test Coverage Requirements Per Agent
+
+Every agent working on a task must:
+
+1. **Write tests** for any new functionality or modified behavior
+2. **Maintain minimum coverage** as declared in the task definition (e.g., 80%)
+3. **Run existing test suite** — no regressions allowed
+4. **Add integration tests** for cross-module changes
+
+**Test requirements by task type:**
+
+| Task type         | Unit tests | Integration tests | E2E tests |
+|-------------------|------------|-------------------|-----------|
+| New feature       | Required   | Required          | If applicable |
+| Bug fix           | Required (regression test) | If applicable | If applicable |
+| Refactor          | Required   | Required          | If applicable |
+| Docs only         | Not required | Not required    | Not required |
+| Config only       | Not required | Not required    | If applicable |
+
+**CI validation:**
+
+- PR must pass all existing tests
+- New tests must be included in the PR
+- Coverage report attached to PR comment
+- Below minimum coverage → PR blocked until fixed
 
 ## Glossary
 
