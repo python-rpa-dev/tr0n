@@ -20,12 +20,12 @@ Each LLM gets its own feature branch, works independently, and opens a PR when d
 
 When 3+ agents' scopes overlap, deterministic priority rules decide:
 
-| Priority | Condition | Action |
-|----------|-----------|--------|
-| **1** | Agent has **earlier confirmed claim** | Winner — other agents must defer or adjust |
-| **2** | Same claim time → **shorter scope** | Winner — less impact, easier to merge |
-| **3** | Same scope size → **higher task priority** | Winner — business criticality wins |
-| **4** | Same priority → **first to claim** | Winner — FIFO, no randomness |
+| Priority | Condition                              | Action                                        |
+|----------|----------------------------------------|-----------------------------------------------|
+| **1**    | Agent has **earlier confirmed claim**  | Winner — other agents must defer or adjust    |
+| **2**    | Same claim time → **shorter scope**    | Winner — less impact, easier to merge         |
+| **3**    | Same scope size → **higher task priority** | Winner — business criticality wins         |
+| **4**    | Same priority → **first to claim**     | Winner — FIFO, no randomness                  |
 
 **Overlap resolution strategies:**
 
@@ -66,7 +66,7 @@ Examples: `agent-1/T-042-add-auth`, `agent-2/T-043-fix-login-bug`
 
 Each agent opens a PR with structured body: task ID, agent ID, changed files, test status, and notes.
 
-See [`examples/pr-template.md`](examples/pr-template.md) for the full template.
+See [pr-template.md](examples/pr-template.md) for the full template.
 
 #### Stale Base Detection
 
@@ -80,7 +80,7 @@ Before working, an agent announces its intended scope so others can object.
 
 **Coordination layer:** `tasks/` directory in the repo.
 
-See [`examples/task-directory-structure.md`](examples/task-directory-structure.md) for the full layout.
+See [task-directory-structure.md](examples/task-directory-structure.md) for the full layout.
 
 **Claim lifecycle:** `pending → confirmed → active → resolved/rejected`
 
@@ -88,7 +88,7 @@ See [`examples/task-directory-structure.md`](examples/task-directory-structure.m
 
 <!-- TODO: Define the full spec for claim file fields and validation rules -->
 
-See [`examples/task-claim.md`](examples/task-claim.md) for a complete example.
+See [task-claim.md](examples/task-claim.md) for a complete example.
 
 **Flexible claim window:**
 - Default: configurable at system level (e.g., 1 hour)
@@ -167,12 +167,12 @@ CI is **manual** — user or another agent runs it after an agent opens a PR.
 
 **PR statuses:**
 
-| Status | Meaning | Can agent work on something else? |
-|--------|---------|-----------------------------------|
-| `awaiting-ci` | PR open, CI not yet run | Yes — non-blocking tasks |
-| `ci-passed` | CI passed, ready to merge | Yes |
-| `ci-failed` | CI failed, needs fix | No — agent must fix |
-| `ready-to-merge` | Approved, waiting for human merge | Yes |
+| Status       | Meaning                        | Can agent work on something else? |
+|--------------|--------------------------------|-----------------------------------|
+| `awaiting-ci`| PR open, CI not yet run        | Yes — non-blocking tasks          |
+| `ci-passed`  | CI passed, ready to merge      | Yes                               |
+| `ci-failed`  | CI failed, needs fix           | No — agent must fix               |
+| `ready-to-merge` | Approved, waiting for human merge | Yes                          |
 
 **Agent workflow on task completion:**
 
@@ -230,16 +230,67 @@ Pin agent environments in Docker containers for deterministic, reproducible buil
 
 ### Stages
 
-| Stage | Description |
-|-------|-------------|
-| **idle** | Agent exists but has no active task |
+| Stage        | Description                                         |
+|--------------|-----------------------------------------------------|
+| **idle**     | Agent exists but has no active task                 |
 | **claiming** | Agent initiated a round-call, waiting for claim window |
-| **working** | Claim confirmed, agent is on its branch making changes |
-| **reviewing** | PR opened, waiting for CI/review results |
-| **merged** | PR merged into `main` |
-| **terminated** | Agent shut down, no longer active |
+| **working**  | Claim confirmed, agent is on its branch making changes |
+| **reviewing**| PR opened, waiting for CI/review results            |
+| **merged**   | PR merged into `main`                               |
+| **terminated**| Agent shut down, no longer active                  |
 
 <!-- TODO: Define transition rules — what triggers each state change, who can initiate it -->
+
+#### Agent State Transition Rules
+
+| Transition               | Trigger                                           | Who initiates     |
+|--------------------------|---------------------------------------------------|-------------------|
+| `idle → claiming`        | User assigns task to agent                        | User/coordinator  |
+| `claiming → working`     | Claim window expires with no objections           | Auto (system)     |
+| `claiming → idle`        | Objection received + resolution deferred          | Auto (system)     |
+| `claiming → claiming`    | Objection received + auto-resolved (loser adjusts)| Auto (system)     |
+| `working → reviewing`    | Agent pushes branch and opens PR                  | Agent             |
+| `working → claiming`     | Claim expires before PR opened                    | Auto (system)     |
+| `reviewing → merged`     | CI passes + review approved + user merges         | User (manual)     |
+| `reviewing → working`    | CI fails or review rejects → agent fixes          | Auto (system)     |
+| `reviewing → reviewing`  | CI fails → agent pushes fix, CI re-runs          | Agent             |
+| `merged → terminated`    | All tasks complete or user terminates             | User              |
+| `terminated → idle`      | Agent reactivated with new task                   | User/coordinator  |
+
+**Agent state update mechanism:**
+
+When a transition happens, the agent updates its identity file:
+
+```json
+{
+  "id": "agent-1",
+  "status": "reviewing",
+  "current_task": "T-042",
+  "current_branch": "agent-1/T-042-add-auth",
+  "last_transition": "2026-05-16T10:30:00Z",
+  "transition_trigger": "pr_opened"
+}
+```
+
+#### Claim State Transitions
+
+| Transition               | Trigger                                    |
+|--------------------------|--------------------------------------------|
+| `pending → confirmed`    | Claim window expires with no objections    |
+| `pending → pending-resolution` | Objection received                     |
+| `pending → rejected`     | Priority rules decide loser                |
+| `confirmed → active`     | Agent starts working                       |
+| `active → resolved`      | PR merged                                  |
+| `active → rejected`      | User forces cancellation                   |
+| `pending-resolution → confirmed` | Auto-resolved (winner)              |
+| `pending-resolution → active`    | Winner starts working               |
+| `pending-resolution → rejected`  | Loser's claim rejected              |
+
+**Edge cases:**
+
+- **Claim expires while pending:** claim → `expired`, agent → `idle`
+- **Agent terminates while working:** PR stays open, task → `incomplete`, agent → `terminated`
+- **Agent terminates while reviewing:** PR stays open, task → `awaiting-ci`, agent → `terminated`
 
 ### Lifecycle Flow
 
@@ -269,7 +320,7 @@ Each agent has a persistent identity file:
 
 <!-- TODO: Define agent ID naming convention and uniqueness guarantee -->
 
-See [`examples/agent-identity.json`](examples/agent-identity.json) for a complete example.
+See [agent-identity.json](examples/agent-identity.json) for a complete example.
 
 ### Task Assignment
 
@@ -281,7 +332,7 @@ A coordinator (or user) assigns tasks to agents:
 
 <!-- TODO: Define task ID naming convention and uniqueness -->
 
-See [`examples/task-directory-structure.md`](examples/task-directory-structure.md) for the full layout.
+See [task-directory-structure.md](examples/task-directory-structure.md) for the full layout.
 
 ### Shutdown / Termination
 
@@ -303,22 +354,22 @@ See [`examples/task-directory-structure.md`](examples/task-directory-structure.m
 
 Each agent declares its environment in its identity file.
 
-See [`examples/agent-identity.json`](examples/agent-identity.json) for a complete example.
+See [agent-identity.json](examples/agent-identity.json) for a complete example.
 
 ### Task Compatibility Check
 
 Before assigning a task, check requirements against agent capabilities:
 
-| Task requirement | Agent capability | Result |
-|-----------------|-----------------|--------|
-| `platform: linux` | `windows` | ❌ Incompatible — warn user |
-| `tool: docker` | no docker | ❌ Warn — suggest installing |
-| `python >= 3.11` | `3.12` | ✅ Compatible |
-| `platform: any` | any | ✅ Compatible |
+| Task requirement      | Agent capability | Result                        |
+|-----------------------|------------------|-------------------------------|
+| `platform: linux`     | `windows`        | ❌ Incompatible — warn user   |
+| `tool: docker`        | no docker        | ❌ Warn — suggest installing  |
+| `python >= 3.11`      | `3.12`           | ✅ Compatible                 |
+| `platform: any`       | any              | ✅ Compatible                 |
 
 Tasks declare requirements:
 
-See [`examples/task-definition.md`](examples/task-definition.md) for a complete example.
+See [task-definition.md](examples/task-definition.md) for a complete example.
 
 ### Cross-Platform Handling
 
@@ -385,21 +436,21 @@ Users copy `.example` files to their local versions. Local versions are gitignor
 <!-- TODO: Add principle about test coverage requirements per agent -->
 <!-- TODO: Add principle about documentation updates required alongside code changes -->
 
-| Principle | Why it matters |
-|-----------|----------------|
-| Small, atomic tasks | Less overlap = fewer conflicts |
-| Stable interfaces | Agents can change internals without breaking others |
-| Frequent integration | Catch conflicts early, not at the end |
-| Deterministic outputs | Reduces "two agents do different things to the same code" |
-| Clear ownership | Assign files/modules to specific agents when possible |
+| Principle              | Why it matters                                           |
+|------------------------|----------------------------------------------------------|
+| Small, atomic tasks    | Less overlap = fewer conflicts                           |
+| Stable interfaces      | Agents can change internals without breaking others      |
+| Frequent integration   | Catch conflicts early, not at the end                    |
+| Deterministic outputs  | Reduces "two agents do different things to the same code"|
+| Clear ownership        | Assign files/modules to specific agents when possible    |
 
 ## Glossary
 
-- [`examples/agent-identity.json`](examples/agent-identity.json) — Complete agent identity file
-- [`examples/task-claim.md`](examples/task-claim.md) — Task claim file for round-call
-- [`examples/task-definition.md`](examples/task-definition.md) — Task definition with requirements
-- [`examples/pr-template.md`](examples/pr-template.md) — PR template for agent submissions
-- [`examples/task-directory-structure.md`](examples/task-directory-structure.md) — Task directory layout
+- [agent-identity.json](examples/agent-identity.json) — Complete agent identity file
+- [task-claim.md](examples/task-claim.md) — Task claim file for round-call
+- [task-definition.md](examples/task-definition.md) — Task definition with requirements
+- [pr-template.md](examples/pr-template.md) — PR template for agent submissions
+- [task-directory-structure.md](examples/task-directory-structure.md) — Task directory layout
 
 ## Real-World Examples
 
