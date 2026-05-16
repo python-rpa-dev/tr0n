@@ -14,6 +14,76 @@ Each LLM gets its own feature branch, works independently, and opens a PR when d
 - CI/PR checks catch integration issues before main is affected
 - Risk: merge conflicts require human intervention or automated conflict resolution
 
+#### Conflict Resolution
+
+Hybrid approach: auto-merge when files don't overlap, agent-resolve when they do, human only as last resort.
+
+#### Branch Naming Convention
+
+`agent-{id}/{task-id}-{short-desc}`
+
+Examples: `agent-1/T-042-add-auth`, `agent-2/T-043-fix-login-bug`
+
+#### PR Template
+
+Each agent opens a PR with structured body: task ID, agent ID, changed files, test status, and notes.
+
+#### Stale Base Detection
+
+Before starting: fetch latest `main`, record base commit hash. During CI: check if `main` has moved, auto-rebase if so.
+
+#### Round-Call (Pre-Flight Announcement)
+
+Before working, an agent announces its intended scope so others can object.
+
+**Coordination layer:** `tasks/` directory in the repo.
+
+```
+tasks/
+├── active/
+│   └── T-042-agent-1.md    # Current active task claim
+├── resolved/
+│   └── T-042-agent-1.md    # Completed, merged
+└── rejected/
+    └── T-043-agent-2.md    # Conflict, deferred
+```
+
+**Claim lifecycle:** `pending → confirmed → active → resolved/rejected`
+
+**Claim file format:**
+
+```markdown
+## Task
+T-042: Add authentication module
+
+## Agent
+agent-1
+
+## Scope
+- src/auth/
+- tests/test_auth/
+
+## Claimed at
+2026-05-16T10:30:00Z
+
+## Claim window
+1h  ← flexible, user-overridable
+
+## Expires at
+2026-05-16T11:30:00Z
+
+## Status
+pending (expires in 45m)
+```
+
+**Flexible claim window:**
+- Default: configurable at system level (e.g., 1 hour)
+- User can override: `"work on T-042, claim window 30min"`
+- Auto-promotes to `confirmed` after window expires with no objections
+- Expired claims can be reclaimed, reassigned, or discarded
+
+**Conflict resolution:** when two claims overlap, coordinator decides — merge scopes, defer the later claim, or split the work.
+
 ### 2. Feature Flag / Modular Architecture
 
 Design the codebase so agents work in isolated modules with stable interfaces.
@@ -25,6 +95,186 @@ Design the codebase so agents work in isolated modules with stable interfaces.
 ### 3. Future Extensions
 
 Task queue with file-level or module-level locking. A central orchestrator assigns discrete tasks to agents with locks to prevent simultaneous edits on the same file. More sophisticated but avoids blocking.
+
+### 4. Future: Docker Containerization
+
+Pin agent environments in Docker containers for deterministic, reproducible builds. Currently deferred — agents run on native shell environments (Windows/Linux/macOS).
+
+## Agent Lifecycle
+
+### Stages
+
+| Stage | Description |
+|-------|-------------|
+| **idle** | Agent exists but has no active task |
+| **claiming** | Agent initiated a round-call, waiting for claim window |
+| **working** | Claim confirmed, agent is on its branch making changes |
+| **reviewing** | PR opened, waiting for CI/review results |
+| **merged** | PR merged into `main` |
+| **terminated** | Agent shut down, no longer active |
+
+### Lifecycle Flow
+
+```
+idle
+  │
+  ├──→ claiming ──(window expires, no objections)──→ working
+  │        │
+  │        └──(objection received)──→ idle (re-claim with adjusted scope)
+  │
+  ├──→ working ──(PR opened)──→ reviewing
+  │        │
+  │        └──(claim expired)──→ idle (re-claim)
+  │
+  ├──→ reviewing ──(CI passes, review passes)──→ merged
+  │        │
+  │        └──(CI fails / review rejects)──→ working (fix and push)
+  │
+  ├──→ merged ──→ terminated
+  │
+  └──→ terminated
+```
+
+### Agent Registration
+
+Each agent has a persistent identity file:
+
+```
+agents/
+├── agent-1.json    # Active agent
+├── agent-2.json    # Active agent
+└── archived/
+    └── agent-3.json    # Terminated
+```
+
+**Agent identity file:**
+
+```json
+{
+  "id": "agent-1",
+  "name": "Auth Specialist",
+  "created": "2026-05-16T09:00:00Z",
+  "status": "idle",
+  "current_task": null,
+  "current_branch": null,
+  "total_tasks_completed": 12,
+  "expertise": ["auth", "security", "sessions"],
+  "last_active": "2026-05-16T10:30:00Z"
+}
+```
+
+### Task Assignment
+
+A coordinator (or user) assigns tasks to agents:
+
+1. Task is created in a `tasks/` directory (separate from active claims)
+2. Coordinator matches task to agent by **expertise** or **availability**
+3. Agent receives the task and enters the **claiming** stage
+
+```
+tasks/
+├── backlog/
+│   └── T-044.md
+├── assigned/
+│   └── T-044-agent-1.md
+├── in-progress/
+│   └── T-045-agent-2.md
+└── done/
+    └── T-042.md
+```
+
+### Shutdown / Termination
+
+- **Graceful:** agent finishes current task → terminates
+- **Forced:** coordinator/user forces shutdown
+  - If agent is **idle/claiming** → safe to terminate
+  - If agent is **working** → PR stays open, task marked as incomplete, another agent can pick it up
+  - Branch is preserved (not deleted) for inspection
+
+### Resource Management
+
+- Agents are **ephemeral** — each time an agent "wakes up", it reads its state from the repo
+- No long-lived connections or persistent sessions needed
+- State is **declarative** (JSON files + Git) — the repo is the source of truth
+
+## Multi-Platform Agent Design
+
+### Environment Declaration (Per-Agent)
+
+Each agent declares its environment in its identity file:
+
+```json
+{
+  "id": "agent-1",
+  "platform": "windows",
+  "shell": "powershell",
+  "python": "3.12",
+  "node": "20",
+  "installed_tools": ["git", "python", "node"],
+  "missing_tools": ["docker", "terraform"],
+  "last_sync": "2026-05-16T10:30:00Z"
+}
+```
+
+### Task Compatibility Check
+
+Before assigning a task, check requirements against agent capabilities:
+
+| Task requirement | Agent capability | Result |
+|-----------------|-----------------|--------|
+| `platform: linux` | `windows` | ❌ Incompatible — warn user |
+| `tool: docker` | no docker | ❌ Warn — suggest installing |
+| `python >= 3.11` | `3.12` | ✅ Compatible |
+| `platform: any` | any | ✅ Compatible |
+
+Tasks declare requirements:
+
+```markdown
+## Task
+T-044: Deploy to AWS
+
+## Requires
+- platform: linux
+- tool: aws-cli
+- python: >= 3.11
+```
+
+### Cross-Platform Handling
+
+**Git is the universal layer** — all coordination happens through Git, which works identically on all platforms.
+
+**File paths in task scope:** use forward slashes (POSIX-style), Git normalizes them:
+- `src/auth/` works on both Windows and Linux
+- Never use `src\auth\` in task declarations
+
+**Shell-agnostic coordination:** the coordinator only uses Git commands (not shell-specific ones):
+- ✅ `git fetch`, `git checkout`, `git push`
+- ❌ `ls`, `rm`, `mkdir` (use Git-aware alternatives)
+
+Agents run their own local commands (tests, lint, builds) in their native shell — that's fine. Coordination stays Git-only.
+
+### Local Tool Detection
+
+When an agent wakes up, it detects its environment and updates its identity:
+
+```
+Detected:
+- OS: Windows 11
+- Shell: PowerShell 7.4
+- Python: 3.11.9
+- Node: 20.11.0
+- git: 2.43.0
+- docker: not found
+```
+
+This info is pushed to the agent identity file on next sync.
+
+### Fallback Strategy
+
+When a task requires something an agent doesn't have:
+1. **Warn the user** — "Task T-044 requires aws-cli, not found on this machine"
+2. **Suggest alternatives** — installation instructions for the platform
+3. **Defer** — task stays in backlog until a compatible agent picks it up
 
 ## Key Principles
 
