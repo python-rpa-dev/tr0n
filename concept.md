@@ -49,6 +49,7 @@ Claim overlap detected?
             ├─→ Split scopes → both proceed with adjusted scope
             ├─→ Defer one → one proceeds, other returns to backlog
             └─→ Merge tasks → one agent handles both
+```
 
 <!-- TODO: Future — manual operator override tool for conflict resolution -->
 
@@ -430,6 +431,120 @@ Users copy `.example` files to their local versions. Local versions are gitignor
 - Diff shows only template changes, not user noise
 
 **Agent state files** (`agents/`, `tasks/`) are repo-state and remain tracked.
+
+## Agent Design
+
+### Launch Command
+
+```
+tr0n-agent --task T-042
+```
+
+Or with claim window override:
+
+```
+tr0n-agent --task T-042 --claim-window 30min
+```
+
+### Agent Lifecycle on Launch
+
+1. Reads its identity from `config/local/agent.json` (or `config/templates/agent.json.example` if no local copy)
+2. Fetches latest `main` from remote
+3. Reads the task from `tasks/assigned/T-042-<agent-id>.md`
+4. Initiates round-call — creates claim in `tasks/active/`
+5. Waits for claim window (polling, not blocking — picks up other tasks if claimed)
+6. Creates branch `agent-{id}/T-042-<desc>` from latest `main`
+7. Works on the task
+8. Opens PR when done
+9. Exits — agent is ephemeral, no persistent process needed
+
+### Alternative: No-args Mode
+
+```
+tr0n-agent
+```
+
+Agent looks for an available task in `tasks/assigned/` (matched to its expertise), then follows the same flow.
+
+### Configurable via env vars:
+
+```bash
+TR0N_AGENT_ID=agent-1 tr0n-agent
+TR0N_CLAIM_WINDOW=2h tr0n-agent --task T-042
+```
+
+### Two Modes of Operation
+
+#### 1. Standalone Agent (default)
+
+A CLI tool that handles the full workflow: claim, branch, work, PR.
+
+```
+tr0n-agent --task T-042
+```
+
+#### 2. Protocol over stdin/stdout (for existing LLM clients)
+
+The agent exposes a **protocol** that any LLM client can speak:
+
+```
+tr0n-agent --protocol
+```
+
+The client sends commands via stdin and reads responses via stdout:
+
+```
+> claim task T-042 scope "src/auth/"
+< {"status": "pending", "expires": "2026-05-16T11:30:00Z"}
+
+> check conflicts
+< {"conflicts": []}
+
+> create branch agent-1/T-042
+< {"branch": "agent-1/T-042", "base": "abc123"}
+
+> push branch
+< {"status": "ok", "pr_url": "https://..."}
+```
+
+This way **opencode**, **aichat**, or any other LLM client can drive the agent as a sub-tool. The LLM client handles the reasoning; the agent handles the Git operations and coordination.
+
+### Minimal JS Implementation
+
+**Runtime:** Node.js (already installed on most dev machines)
+
+**Dependencies:** zero npm packages. Uses only Node built-in modules:
+
+| Need | Built-in module |
+|------|-----------------|
+| Git commands | `child_process.exec` |
+| JSON | `fs.readFileSync` |
+| File I/O | `fs` |
+| Path handling | `path` |
+| Argument parsing | `process.argv` |
+
+**Operations via:**
+
+| Operation | Tool |
+|-----------|------|
+| Git operations (fetch, checkout, push) | `git` CLI |
+| PR creation/management | `gh` CLI |
+| File updates (config, claims) | `git` (commit + push) |
+
+No HTTP library needed — `gh` handles everything. If `gh` is not available, the agent can use `git` to push and the user manually creates the PR.
+
+**Structure:**
+
+```
+agent/
+├── agent.js          # Main entry point
+├── claim.js          # Round-call logic
+├── git.js            # Git operations
+├── conflict.js       # Conflict detection/resolution
+└── protocol.js       # stdin/stdout protocol
+```
+
+Single-file version is also possible — `agent.js` with everything inline.
 
 ## Key Principles
 
