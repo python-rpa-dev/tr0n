@@ -33,8 +33,7 @@ tr0n/
 ├── AGENTS.md               # Instructions for AI agents
 ├── .gitignore
 ├── docs/                   # User-facing documentation
-│   ├── agent-guide.md      # Installation, launch, debugging guide
-│   └── LLM-client-discovery.md  # How each LLM client discovers and integrates the agent
+│   └── agent-guide.md      # Installation, launch, debugging, LLM client discovery
 ├── agent/                  # Agent implementation (zero npm dependencies)
 │   ├── agent.js            # Main entry point (CLI + protocol)
 │   ├── claim.js            # Claim lifecycle (create, confirm, reject)

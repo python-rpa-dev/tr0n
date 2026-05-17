@@ -14,9 +14,7 @@ Each LLM gets its own feature branch, works independently, and opens a PR when d
 - CI/PR checks catch integration issues before main is affected
 - Risk: merge conflicts require human intervention or automated conflict resolution
 
-<!-- TODO: Define conflict resolution priority rules — which side wins when 3+ agents overlap -->
-
-#### Conflict Resolution Priority Rules (3+ Agents)
+<!-- TODO: Future — manual operator override tool for conflict resolution -->
 
 When 3+ agents' scopes overlap, deterministic priority rules decide:
 
@@ -70,8 +68,6 @@ The override is recorded in the claim file:
   "override_reason": "Business priority: agent-2's task is more urgent"
 }
 ```
-
-<!-- TODO: Future — manual operator override tool for conflict resolution -->
 
 #### Conflict Resolution
 
@@ -146,8 +142,6 @@ See [task-directory-structure.md](examples/task-directory-structure.md) for the 
 
 **Claim file format:**
 
-<!-- TODO: Define the full spec for claim file fields and validation rules -->
-
 #### Claim File Field Spec
 
 **Required fields:**
@@ -197,8 +191,6 @@ See [task-claim.md](examples/task-claim.md) for a complete example.
 - Expired claims can be reclaimed, reassigned, or discarded
 
 **Conflict resolution:** when two claims overlap, coordinator decides — merge scopes, defer the later claim, or split the work.
-
-<!-- TODO: Define objection format and resolution protocol -->
 
 #### Objection Format and Resolution Protocol
 
@@ -338,8 +330,6 @@ Pin agent environments in Docker containers for deterministic, reproducible buil
 | **reviewing**| PR opened, waiting for CI/review results               |
 | **merged**   | PR merged into `main`                                  |
 | **terminated**| Agent shut down, no longer active                     |
-
-<!-- TODO: Define transition rules — what triggers each state change, who can initiate it -->
 
 #### Agent State Transition Rules
 
@@ -898,9 +888,6 @@ Single-file version is also possible — `agent.js` with everything inline.
 - Cross-platform compatibility (Windows PowerShell vs bash)
 - JSON parsing is fragile in shell
 - Less maintainable for complex logic
-
-<!-- TODO: Add principle about test coverage requirements per agent -->
-<!-- TODO: Add principle about documentation updates required alongside code changes -->
 
 | Principle              | Why it matters                                           |
 |------------------------|----------------------------------------------------------|
