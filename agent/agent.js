@@ -22,6 +22,45 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// --- UUID generation (no dependencies) ---
+// Generates a UUID v4 encoded in base62 (22 characters).
+// Uses crypto.randomBytes on Node.js 14.17+; falls back to Math.random for older versions.
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback: Math.random-based UUID v4
+  const hex = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
+  return hex.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Encodes a hex string to base62 (a-z, A-Z, 0-9).
+function encodeBase62(hex) {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let num = BigInt('0x' + hex.replace(/-/g, ''));
+  let result = '';
+  while (num > 0n) {
+    result = chars[Number(num % 62n)] + result;
+    num = num / 62n;
+  }
+  // Pad to 22 characters (UUID v4 has 128 bits = ~22 base62 chars)
+  while (result.length < 22) {
+    result = chars[Math.floor(Math.random() * 62)] + result;
+  }
+  return result;
+}
+
+// Generates a unique agent ID in the format: agent-{base62-uuid}
+function generateAgentID() {
+  const uuid = generateUUID();
+  const base62 = encodeBase62(uuid);
+  return { id: `agent-${base62}`, uuid };
+}
+
 // --- Paths ---
 // REPO_ROOT: the tr0n repository root directory
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -34,12 +73,18 @@ const SETTINGS_FILE = path.join(REPO_ROOT, 'config', 'local', 'settings.json');
 // --- Config Layer ---
 // Loads agent identity config. Falls back from local copy to template.
 // If neither exists, creates local copy from template and throws if template is missing.
+// On first run (no local config), auto-generates a unique agent ID (base62 UUID v4).
 function loadConfig() {
   if (fs.existsSync(CONFIG_LOCAL)) {
     return JSON.parse(fs.readFileSync(CONFIG_LOCAL, 'utf8'));
   }
   if (fs.existsSync(CONFIG_TEMPLATE)) {
     const tpl = JSON.parse(fs.readFileSync(CONFIG_TEMPLATE, 'utf8'));
+    // Auto-generate unique agent ID on first run
+    const { id, uuid } = generateAgentID();
+    tpl.id = id;
+    tpl.uuid = uuid;
+    tpl.created = new Date().toISOString();
     if (!fs.existsSync(path.dirname(CONFIG_LOCAL))) {
       fs.mkdirSync(path.dirname(CONFIG_LOCAL), { recursive: true });
     }

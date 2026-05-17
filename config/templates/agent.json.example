@@ -1,9 +1,10 @@
 {
-  "id": "agent-{id}",
-  "name": "{agent-name}",
+  "id": "agent-{auto-generated}",
+  "uuid": "{auto-generated}",
+  "name": "My Agent",
   "platform": "{platform}",
   "shell": "{shell}",
-  "created": "{date}",
+  "created": "{auto-generated}",
   "status": "idle",
   "current_task": null,
   "current_branch": null,

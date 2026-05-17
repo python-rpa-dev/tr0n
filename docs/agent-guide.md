@@ -53,13 +53,14 @@ cp config/templates/agent.json.example config/local/agent.json
 cp config/templates/settings.json.example config/local/settings.json
 ```
 
-### 3. Edit agent config
+### 3. Customize agent config (optional)
 
-Edit `config/local/agent.json` to set your agent identity:
+The agent **auto-generates a unique ID** on first run. You can customize other fields in `config/local/agent.json`:
 
 ```json
 {
-  "id": "agent-{your-id}",
+  "id": "agent-7xK9mPqR2vN4wY8jL1bZ",
+  "uuid": "a1b2c3d4-e5f6-4789-a012-b3456789cdef",
   "name": "My Agent",
   "platform": "windows",
   "shell": "powershell",
@@ -70,6 +71,22 @@ Edit `config/local/agent.json` to set your agent identity:
   "missing_tools": ["docker"]
 }
 ```
+
+**Important fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes (auto-generated) | Unique agent ID — do not change after first run |
+| `name` | No | Human-readable agent name |
+| `platform` | No | Target platform (windows, linux, macos) |
+| `shell` | No | Shell name (powershell, bash, zsh) |
+| `expertise` | No | Agent specialization areas (used for task matching) |
+| `python` | No | Python version installed |
+| `node` | No | Node.js version installed |
+| `installed_tools` | No | List of available tools |
+| `missing_tools` | No | List of tools not installed |
+
+The `id` and `uuid` fields are auto-generated on first run. **Do not change them** — the agent uses them to identify itself across runs.
 
 See [agent.json.example](config/templates/agent.json.example) for the full template.
 
